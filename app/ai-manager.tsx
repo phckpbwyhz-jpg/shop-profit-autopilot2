@@ -1,7 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -14,10 +24,21 @@ import {
   getMonthSettings,
   getStore,
 } from '@/src/lib/appData';
-import { buildManagerInsights, type InsightSeverity, type ManagerInsight } from '@/src/lib/managerInsights';
+import {
+  buildManagerInsights,
+  type InsightSeverity,
+  type ManagerInsight,
+} from '@/src/lib/managerInsights';
 import { calculatePerformance, formatCurrency } from '@/src/lib/performance';
 import { supabase } from '@/src/lib/supabase';
-import type { CustomKpi, DailyPerformance, HistoricalMonth, MonthSettings, Store, UserAssignment } from '@/src/types/app';
+import type {
+  CustomKpi,
+  DailyPerformance,
+  HistoricalMonth,
+  MonthSettings,
+  Store,
+  UserAssignment,
+} from '@/src/types/app';
 
 interface StoreSnapshot {
   store: Store;
@@ -33,7 +54,8 @@ const currentPeriod = () => {
   return { year: date.getFullYear(), month: date.getMonth() + 1 };
 };
 
-const message = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong.';
+const message = (error: unknown) =>
+  error instanceof Error ? error.message : 'Something went wrong.';
 
 async function loadSnapshot(store: Store): Promise<StoreSnapshot> {
   const { year, month } = currentPeriod();
@@ -44,12 +66,21 @@ async function loadSnapshot(store: Store): Promise<StoreSnapshot> {
     getCustomKpis(store.id, year, month),
   ]);
   const sameDayLastYear = daily
-    ? await getDailyForSellingDay(store.id, year - 1, month, daily.selling_day_number)
+    ? await getDailyForSellingDay(
+        store.id,
+        year - 1,
+        month,
+        daily.selling_day_number,
+      )
     : null;
   return { store, settings, daily, priorYear, sameDayLastYear, kpis };
 }
 
-function insightsFor(snapshot: StoreSnapshot): { insights: ManagerInsight[]; projection: number; goalPercent: number } {
+function insightsFor(snapshot: StoreSnapshot): {
+  insights: ManagerInsight[];
+  projection: number;
+  goalPercent: number;
+} {
   const input = {
     monthlySalesGoal: Number(snapshot.settings?.sales_goal ?? 0),
     mtdSales: Number(snapshot.daily?.mtd_sales ?? 0),
@@ -58,8 +89,12 @@ function insightsFor(snapshot: StoreSnapshot): { insights: ManagerInsight[]; pro
     carCount: Number(snapshot.daily?.car_count_mtd ?? 0),
     sellingDaysCompleted: Number(snapshot.daily?.selling_day_number ?? 0),
     totalSellingDays: Number(snapshot.settings?.selling_days_total ?? 0),
-    lastYearCompletedMonthSales: snapshot.priorYear ? Number(snapshot.priorYear.sales) : undefined,
-    lastYearSameSellingDaySales: snapshot.sameDayLastYear ? Number(snapshot.sameDayLastYear.mtd_sales) : undefined,
+    lastYearCompletedMonthSales: snapshot.priorYear
+      ? Number(snapshot.priorYear.sales)
+      : undefined,
+    lastYearSameSellingDaySales: snapshot.sameDayLastYear
+      ? Number(snapshot.sameDayLastYear.mtd_sales)
+      : undefined,
   };
   const metrics = calculatePerformance(input);
   return {
@@ -81,6 +116,9 @@ export default function AiManagerScreen() {
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [question, setQuestion] = useState('');
+  const [coachAnswer, setCoachAnswer] = useState('');
+  const [asking, setAsking] = useState(false);
 
   const load = useCallback(async (refresh = false) => {
     refresh ? setRefreshing(true) : setLoading(true);
@@ -90,7 +128,8 @@ export default function AiManagerScreen() {
       if (error) throw error;
       if (!user) throw new Error('Sign in required.');
       const nextAssignment = await getAssignment(user.id);
-      if (!nextAssignment) throw new Error('No active workspace assignment was found.');
+      if (!nextAssignment)
+        throw new Error('No active workspace assignment was found.');
       setAssignment(nextAssignment);
 
       let stores: Store[] = [];
@@ -100,10 +139,15 @@ export default function AiManagerScreen() {
       } else if (nextAssignment.district_id) {
         stores = await getDistrictStores(nextAssignment.district_id);
       }
-      if (!stores.length) throw new Error('No accessible store data is available for AI Manager.');
+      if (!stores.length)
+        throw new Error('No accessible store data is available for AI Manager.');
       const nextSnapshots = await Promise.all(stores.map(loadSnapshot));
       setSnapshots(nextSnapshots);
-      setSelectedStoreId((current) => current && nextSnapshots.some((item) => item.store.id === current) ? current : nextSnapshots[0].store.id);
+      setSelectedStoreId((current) =>
+        current && nextSnapshots.some((item) => item.store.id === current)
+          ? current
+          : nextSnapshots[0].store.id,
+      );
     } catch (error) {
       Alert.alert('AI Manager', message(error));
     } finally {
@@ -112,62 +156,293 @@ export default function AiManagerScreen() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const selected = useMemo(
-    () => snapshots.find((snapshot) => snapshot.store.id === selectedStoreId) ?? snapshots[0] ?? null,
+    () =>
+      snapshots.find((snapshot) => snapshot.store.id === selectedStoreId) ??
+      snapshots[0] ??
+      null,
     [selectedStoreId, snapshots],
   );
   const result = selected ? insightsFor(selected) : null;
 
-  if (loading) return <SafeAreaView style={styles.center}><ActivityIndicator size="large" /></SafeAreaView>;
+  async function askCoach() {
+    if (!supabase || !selected) return;
+    if (!question.trim()) {
+      Alert.alert('Ask AI Coach', 'Enter a management question first.');
+      return;
+    }
+    setAsking(true);
+    setCoachAnswer('');
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-manager-coach', {
+        body: { store_id: selected.store.id, question: question.trim() },
+      });
+      if (error) throw error;
+      if (!data?.answer) throw new Error(data?.error ?? 'AI Coach returned no answer.');
+      setCoachAnswer(String(data.answer));
+    } catch (error) {
+      Alert.alert(
+        'AI Coach unavailable',
+        `${message(error)}\n\nThe server-side OpenAI credential may still need to be configured.`,
+      );
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  if (loading)
+    return (
+      <SafeAreaView style={styles.center}>
+        <ActivityIndicator size="large" />
+      </SafeAreaView>
+    );
 
   return (
     <SafeAreaView style={styles.page}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} accessibilityLabel="Back"><Ionicons name="chevron-back" size={28} /></Pressable>
-        <View style={styles.flex}><Text style={styles.eyebrow}>AI MANAGER</Text><Text style={styles.headerTitle}>Verified priorities</Text></View>
+        <Pressable onPress={() => router.back()} accessibilityLabel="Back">
+          <Ionicons name="chevron-back" size={28} />
+        </Pressable>
+        <View style={styles.flex}>
+          <Text style={styles.eyebrow}>AI MANAGER</Text>
+          <Text style={styles.headerTitle}>Verified priorities</Text>
+        </View>
         <Ionicons name="sparkles" size={24} color="#1769e0" />
       </View>
-      <ScrollView contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />}>
+
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void load(true)}
+          />
+        }
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.hero}>
           <Text style={styles.heroTitle}>What should I focus on?</Text>
-          <Text style={styles.muted}>The priorities below come from verified shop data and deterministic calculations. AI is not allowed to recalculate your accounting numbers or invent future workload.</Text>
+          <Text style={styles.muted}>
+            Priorities come from verified shop data and deterministic calculations.
+            AI explains the data; it does not become the source of truth.
+          </Text>
         </View>
 
-        {snapshots.length > 1 ? <View style={styles.card}><Text style={styles.label}>Store</Text><View style={styles.chips}>{snapshots.map((snapshot) => <Pressable key={snapshot.store.id} onPress={() => setSelectedStoreId(snapshot.store.id)} style={[styles.chip, selectedStoreId === snapshot.store.id && styles.chipOn]}><Text style={[styles.chipText, selectedStoreId === snapshot.store.id && styles.chipTextOn]}>{snapshot.store.store_code ? `${snapshot.store.store_code} · ` : ''}{snapshot.store.name}</Text></Pressable>)}</View></View> : null}
-
-        {selected && result ? <>
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryCard}><Text style={styles.summaryLabel}>Projected month-end</Text><Text style={styles.summaryValue}>{formatCurrency(result.projection)}</Text></View>
-            <View style={styles.summaryCard}><Text style={styles.summaryLabel}>Projected goal</Text><Text style={styles.summaryValue}>{result.goalPercent.toFixed(1)}%</Text></View>
+        {snapshots.length > 1 ? (
+          <View style={styles.card}>
+            <Text style={styles.label}>Store</Text>
+            <View style={styles.chips}>
+              {snapshots.map((snapshot) => (
+                <Pressable
+                  key={snapshot.store.id}
+                  onPress={() => {
+                    setSelectedStoreId(snapshot.store.id);
+                    setCoachAnswer('');
+                  }}
+                  style={[
+                    styles.chip,
+                    selectedStoreId === snapshot.store.id && styles.chipOn,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      selectedStoreId === snapshot.store.id && styles.chipTextOn,
+                    ]}
+                  >
+                    {snapshot.store.store_code
+                      ? `${snapshot.store.store_code} · `
+                      : ''}
+                    {snapshot.store.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
-          <Text style={styles.sectionTitle}>Top 3 priorities</Text>
-          {result.insights.map((insight, index) => <InsightCard key={insight.id} insight={insight} rank={index + 1} />)}
-          {!result.insights.length ? <View style={styles.card}><Text style={styles.cardTitle}>No priority gaps detected</Text><Text style={styles.muted}>Enter current sales, labor, parts and KPI data to generate management priorities.</Text></View> : null}
-        </> : null}
+        ) : null}
+
+        {selected && result ? (
+          <>
+            <View style={styles.summaryRow}>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Projected month-end</Text>
+                <Text style={styles.summaryValue}>
+                  {formatCurrency(result.projection)}
+                </Text>
+              </View>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Projected goal</Text>
+                <Text style={styles.summaryValue}>
+                  {result.goalPercent.toFixed(1)}%
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.sectionTitle}>Top 3 priorities</Text>
+            {result.insights.map((insight, index) => (
+              <InsightCard
+                key={insight.id}
+                insight={insight}
+                rank={index + 1}
+              />
+            ))}
+            {!result.insights.length ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>No priority gaps detected</Text>
+                <Text style={styles.muted}>
+                  Enter current sales, labor, parts and KPI data to generate
+                  management priorities.
+                </Text>
+              </View>
+            ) : null}
+          </>
+        ) : null}
 
         <View style={styles.coachCard}>
-          <View style={styles.coachHeader}><Ionicons name="chatbubbles-outline" size={24} color="#1769e0" /><Text style={styles.cardTitle}>Ask AI Coach</Text></View>
-          <Text style={styles.muted}>The coaching layer is prepared next. It will receive only RLS-authorized store context plus these verified metrics and priorities; the model will explain and coach, not become the source of truth.</Text>
-          <View style={styles.locked}><Ionicons name="lock-closed" size={16} color="#667085" /><Text style={styles.lockedText}>Server AI credential not configured yet</Text></View>
+          <View style={styles.coachHeader}>
+            <Ionicons name="chatbubbles-outline" size={24} color="#1769e0" />
+            <Text style={styles.cardTitle}>Ask AI Coach</Text>
+          </View>
+          <Text style={styles.muted}>
+            Ask about sales pace, labor, parts, ARO, or what to coach today. The
+            server re-validates your store access and builds its own verified data
+            snapshot before contacting the model.
+          </Text>
+          <TextInput
+            value={question}
+            onChangeText={setQuestion}
+            placeholder="Example: What are the three things I should do before lunch?"
+            multiline
+            maxLength={2000}
+            style={styles.questionInput}
+          />
+          <Pressable
+            onPress={() => void askCoach()}
+            disabled={asking}
+            style={[styles.askButton, asking && styles.disabled]}
+          >
+            {asking ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Ionicons name="sparkles" size={18} color="#fff" />
+            )}
+            <Text style={styles.askButtonText}>
+              {asking ? 'Thinking…' : 'Ask AI Coach'}
+            </Text>
+          </Pressable>
+          {coachAnswer ? (
+            <View style={styles.answerBox}>
+              <Text style={styles.answerLabel}>AI COACH</Text>
+              <Text style={styles.answerText}>{coachAnswer}</Text>
+            </View>
+          ) : null}
+          <Text style={styles.guardrail}>
+            Guardrail: AI does not know future workload, open ROs, or customer
+            intent unless that information is explicitly supplied later.
+          </Text>
         </View>
 
-        {assignment?.district_id ? <Pressable style={styles.secondaryButton} onPress={() => router.push('/hub')}><Ionicons name="people-outline" size={20} color="#1769e0" /><Text style={styles.secondaryText}>Open District Hub</Text></Pressable> : null}
+        {assignment?.district_id ? (
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => router.push('/hub')}
+          >
+            <Ionicons name="people-outline" size={20} color="#1769e0" />
+            <Text style={styles.secondaryText}>Open District Hub</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 function InsightCard({ insight, rank }: { insight: ManagerInsight; rank: number }) {
-  return <View style={[styles.card, styles.insightCard]}><View style={styles.rank}><Text style={styles.rankText}>{rank}</Text></View><View style={styles.flex}><View style={styles.insightTop}><Text style={styles.cardTitle}>{insight.title}</Text><SeverityBadge severity={insight.severity} /></View><Text style={styles.detail}>{insight.detail}</Text><Text style={styles.actionLabel}>Recommended action</Text><Text style={styles.action}>{insight.action}</Text></View></View>;
+  return (
+    <View style={[styles.card, styles.insightCard]}>
+      <View style={styles.rank}>
+        <Text style={styles.rankText}>{rank}</Text>
+      </View>
+      <View style={styles.flex}>
+        <View style={styles.insightTop}>
+          <Text style={styles.cardTitle}>{insight.title}</Text>
+          <SeverityBadge severity={insight.severity} />
+        </View>
+        <Text style={styles.detail}>{insight.detail}</Text>
+        <Text style={styles.actionLabel}>Recommended action</Text>
+        <Text style={styles.action}>{insight.action}</Text>
+      </View>
+    </View>
+  );
 }
 
 function SeverityBadge({ severity }: { severity: InsightSeverity }) {
-  const label: Record<InsightSeverity, string> = { critical: 'Act now', warning: 'Watch', opportunity: 'Opportunity', positive: 'On pace' };
-  return <View style={[styles.badge, severity === 'critical' && styles.badgeCritical, severity === 'positive' && styles.badgePositive]}><Text style={styles.badgeText}>{label[severity]}</Text></View>;
+  const label: Record<InsightSeverity, string> = {
+    critical: 'Act now',
+    warning: 'Watch',
+    opportunity: 'Opportunity',
+    positive: 'On pace',
+  };
+  return (
+    <View
+      style={[
+        styles.badge,
+        severity === 'critical' && styles.badgeCritical,
+        severity === 'positive' && styles.badgePositive,
+      ]}
+    >
+      <Text style={styles.badgeText}>{label[severity]}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  page:{flex:1,backgroundColor:'#f5f7fb'},center:{flex:1,alignItems:'center',justifyContent:'center'},header:{flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:18,paddingVertical:12,backgroundColor:'#fff',borderBottomWidth:1,borderBottomColor:'#e6eaf0'},flex:{flex:1},eyebrow:{fontSize:11,fontWeight:'800',letterSpacing:1.2,color:'#1769e0'},headerTitle:{fontSize:20,fontWeight:'800',color:'#172033'},scroll:{padding:18,paddingBottom:60,gap:14},hero:{backgroundColor:'#eaf2ff',padding:18,borderRadius:18,gap:8},heroTitle:{fontSize:24,fontWeight:'900',color:'#172033'},muted:{color:'#667085',lineHeight:20},card:{backgroundColor:'#fff',borderRadius:16,padding:16,borderWidth:1,borderColor:'#e6eaf0',gap:9},label:{fontSize:12,fontWeight:'800',color:'#475467',textTransform:'uppercase'},chips:{flexDirection:'row',flexWrap:'wrap',gap:8},chip:{borderWidth:1,borderColor:'#d0d5dd',borderRadius:10,paddingHorizontal:11,paddingVertical:8},chipOn:{backgroundColor:'#eaf2ff',borderColor:'#1769e0'},chipText:{fontWeight:'700',color:'#475467'},chipTextOn:{color:'#1769e0'},summaryRow:{flexDirection:'row',gap:10},summaryCard:{flex:1,backgroundColor:'#fff',padding:14,borderRadius:14,borderWidth:1,borderColor:'#e6eaf0'},summaryLabel:{fontSize:12,color:'#667085',fontWeight:'700'},summaryValue:{fontSize:22,fontWeight:'900',color:'#172033',marginTop:5},sectionTitle:{fontSize:19,fontWeight:'900',color:'#172033',marginTop:2},insightCard:{flexDirection:'row',gap:12},rank:{width:32,height:32,borderRadius:16,backgroundColor:'#172033',alignItems:'center',justifyContent:'center'},rankText:{color:'#fff',fontWeight:'900'},insightTop:{gap:7},cardTitle:{fontSize:17,fontWeight:'800',color:'#172033'},detail:{color:'#475467',lineHeight:20},actionLabel:{fontSize:11,fontWeight:'900',color:'#1769e0',textTransform:'uppercase',marginTop:2},action:{color:'#172033',lineHeight:21,fontWeight:'600'},badge:{alignSelf:'flex-start',borderRadius:999,paddingHorizontal:8,paddingVertical:4,backgroundColor:'#fff4e5'},badgeCritical:{backgroundColor:'#feeceb'},badgePositive:{backgroundColor:'#eaf8ef'},badgeText:{fontSize:11,fontWeight:'800',color:'#475467'},coachCard:{backgroundColor:'#fff',borderRadius:16,padding:16,borderWidth:1,borderColor:'#cfe0ff',gap:10},coachHeader:{flexDirection:'row',alignItems:'center',gap:8},locked:{flexDirection:'row',alignItems:'center',gap:7,backgroundColor:'#f2f4f7',padding:10,borderRadius:10},lockedText:{fontSize:13,fontWeight:'700',color:'#667085'},secondaryButton:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,padding:13,borderRadius:12,borderWidth:1,borderColor:'#b8cdf5',backgroundColor:'#fff'},secondaryText:{fontWeight:'800',color:'#1769e0'}
+  page: { flex: 1, backgroundColor: '#f5f7fb' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e6eaf0' },
+  flex: { flex: 1 },
+  eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, color: '#1769e0' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#172033' },
+  scroll: { padding: 18, paddingBottom: 60, gap: 14 },
+  hero: { backgroundColor: '#eaf2ff', padding: 18, borderRadius: 18, gap: 8 },
+  heroTitle: { fontSize: 24, fontWeight: '900', color: '#172033' },
+  muted: { color: '#667085', lineHeight: 20 },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#e6eaf0', gap: 9 },
+  label: { fontSize: 12, fontWeight: '800', color: '#475467', textTransform: 'uppercase' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { borderWidth: 1, borderColor: '#d0d5dd', borderRadius: 10, paddingHorizontal: 11, paddingVertical: 8 },
+  chipOn: { backgroundColor: '#eaf2ff', borderColor: '#1769e0' },
+  chipText: { fontWeight: '700', color: '#475467' },
+  chipTextOn: { color: '#1769e0' },
+  summaryRow: { flexDirection: 'row', gap: 10 },
+  summaryCard: { flex: 1, backgroundColor: '#fff', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#e6eaf0' },
+  summaryLabel: { fontSize: 12, color: '#667085', fontWeight: '700' },
+  summaryValue: { fontSize: 22, fontWeight: '900', color: '#172033', marginTop: 5 },
+  sectionTitle: { fontSize: 19, fontWeight: '900', color: '#172033', marginTop: 2 },
+  insightCard: { flexDirection: 'row', gap: 12 },
+  rank: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#172033', alignItems: 'center', justifyContent: 'center' },
+  rankText: { color: '#fff', fontWeight: '900' },
+  insightTop: { gap: 7 },
+  cardTitle: { fontSize: 17, fontWeight: '800', color: '#172033' },
+  detail: { color: '#475467', lineHeight: 20 },
+  actionLabel: { fontSize: 11, fontWeight: '900', color: '#1769e0', textTransform: 'uppercase', marginTop: 2 },
+  action: { color: '#172033', lineHeight: 21, fontWeight: '600' },
+  badge: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#fff4e5' },
+  badgeCritical: { backgroundColor: '#feeceb' },
+  badgePositive: { backgroundColor: '#eaf8ef' },
+  badgeText: { fontSize: 11, fontWeight: '800', color: '#475467' },
+  coachCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#cfe0ff', gap: 10 },
+  coachHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  questionInput: { minHeight: 92, borderWidth: 1, borderColor: '#d0d5dd', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: '#172033', textAlignVertical: 'top' },
+  askButton: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1769e0', borderRadius: 12, paddingVertical: 13 },
+  askButtonText: { color: '#fff', fontWeight: '900' },
+  disabled: { opacity: 0.55 },
+  answerBox: { backgroundColor: '#f8faff', borderRadius: 12, padding: 14, gap: 7, borderWidth: 1, borderColor: '#e1e9fb' },
+  answerLabel: { fontSize: 11, fontWeight: '900', color: '#1769e0', letterSpacing: 0.8 },
+  answerText: { color: '#172033', lineHeight: 22, fontSize: 15 },
+  guardrail: { color: '#98a2b3', fontSize: 12, lineHeight: 17 },
+  secondaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 13, borderRadius: 12, borderWidth: 1, borderColor: '#b8cdf5', backgroundColor: '#fff' },
+  secondaryText: { fontWeight: '800', color: '#1769e0' },
 });
