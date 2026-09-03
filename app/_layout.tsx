@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { supabase } from '@/src/lib/supabase';
@@ -18,25 +18,37 @@ export default function RootLayout() {
     return () => data.subscription.unsubscribe();
   }, []);
 
+  const showQuickTools = signedIn && pathname === '/';
+
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
       <Stack screenOptions={{ headerShown: false }} />
-      {signedIn && pathname !== '/hub' ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Open District Hub" style={styles.hubButton} onPress={() => router.push('/hub')}>
-          <Ionicons name="chatbubbles" size={18} color="#fff" />
-          <Text style={styles.hubText}>Hub</Text>
-        </Pressable>
+      {showQuickTools ? (
+        <View style={styles.quickTools} pointerEvents="box-none">
+          <Pressable accessibilityRole="button" accessibilityLabel="Open AI Manager" style={[styles.toolButton, styles.aiButton]} onPress={() => router.push('/ai-manager')}>
+            <Ionicons name="sparkles" size={18} color="#fff" />
+            <Text style={styles.toolText}>AI Manager</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open District Hub" style={styles.toolButton} onPress={() => router.push('/hub')}>
+            <Ionicons name="chatbubbles" size={18} color="#fff" />
+            <Text style={styles.toolText}>Hub</Text>
+          </Pressable>
+        </View>
       ) : null}
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  hubButton: {
+  quickTools: {
     position: 'absolute',
     right: 16,
     bottom: 82,
+    gap: 9,
+    alignItems: 'flex-end',
+  },
+  toolButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -50,5 +62,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 5,
   },
-  hubText: { color: '#fff', fontWeight: '800' },
+  aiButton: { backgroundColor: '#172033' },
+  toolText: { color: '#fff', fontWeight: '800' },
 });
