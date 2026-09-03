@@ -6,7 +6,6 @@
     "scheme": "shop-profit-autopilot",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "plugins": ["expo-router"]
   }
 }
