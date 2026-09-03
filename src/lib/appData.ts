@@ -186,7 +186,7 @@ export async function getCustomKpis(
 ): Promise<CustomKpi[]> {
   const { data: assignments, error } = await client()
     .from('kpi_store_assignments')
-    .select('kpi_id,monthly_goal,kpi_definitions!inner(id,name,tracking_type,required,active)')
+    .select('kpi_id,monthly_goal,kpi_definitions!inner(id,name,tracking_type,required,active,goal_direction)')
     .eq('store_id', storeId)
     .eq('active', true)
     .eq('kpi_definitions.active', true);
@@ -194,7 +194,13 @@ export async function getCustomKpis(
   const rows = (assignments ?? []) as unknown as Array<{
     kpi_id: string;
     monthly_goal: number | null;
-    kpi_definitions: { id: string; name: string; tracking_type: CustomKpi['tracking_type']; required: boolean };
+    kpi_definitions: {
+      id: string;
+      name: string;
+      tracking_type: CustomKpi['tracking_type'];
+      required: boolean;
+      goal_direction: CustomKpi['goal_direction'];
+    };
   }>;
   if (!rows.length) return [];
   const { data: values, error: valuesError } = await client()
@@ -210,9 +216,45 @@ export async function getCustomKpis(
     id: row.kpi_id,
     name: row.kpi_definitions.name,
     tracking_type: row.kpi_definitions.tracking_type,
+    goal_direction: row.kpi_definitions.goal_direction,
     required: row.kpi_definitions.required,
     monthly_goal: row.monthly_goal,
     current_value: current.get(row.kpi_id) ?? null,
+  }));
+}
+
+export async function saveCustomKpiValues(
+  storeId: string,
+  year: number,
+  month: number,
+  values: Array<{ kpi_id: string; current_value: number }>,
+): Promise<void> {
+  if (!values.length) return;
+  const userId = await authenticatedUserId();
+  const ids = values.map((value) => value.kpi_id);
+  const { data: existingRows, error: existingError } = await client()
+    .from('kpi_month_values')
+    .select('id,kpi_id')
+    .eq('store_id', storeId)
+    .eq('year', year)
+    .eq('month', month)
+    .in('kpi_id', ids);
+  throwIfError(existingError);
+  const existing = new Map((existingRows ?? []).map((row) => [row.kpi_id, row.id]));
+  await Promise.all(values.map(async (value) => {
+    const existingId = existing.get(value.kpi_id);
+    const query = existingId
+      ? client().from('kpi_month_values').update({ current_value: value.current_value, entered_by: userId }).eq('id', existingId)
+      : client().from('kpi_month_values').insert({
+          kpi_id: value.kpi_id,
+          store_id: storeId,
+          year,
+          month,
+          current_value: value.current_value,
+          entered_by: userId,
+        });
+    const { error } = await query;
+    throwIfError(error);
   }));
 }
 

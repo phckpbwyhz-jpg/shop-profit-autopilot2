@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import type { Session, User } from '@supabase/supabase-js';
 import {
   useCallback,
@@ -36,6 +37,7 @@ import {
   getLatestDaily,
   getMonthSettings,
   getStore,
+  saveCustomKpiValues,
   saveDaily,
   saveHistoricalMonth,
   saveMonthSettings,
@@ -53,7 +55,6 @@ import {
   hasMinimumRole,
   ROLE_LABELS,
   sectionsForRole,
-  type AppRole,
   type AppSection,
   type BootstrapWorkspaceInput,
   type CustomKpi,
@@ -275,13 +276,13 @@ function ApplicationShell({ assignment }: { assignment: UserAssignment }) {
         {section === 'history' ? <History assignment={assignment} /> : null}
         {section === 'team' ? <Team assignment={assignment} /> : null}
       </View>
-      <View style={styles.nav}>{sections.map((item) => <Pressable key={item} style={styles.navItem} onPress={() => setSection(item)}><Ionicons name={navIcon(item, section === item)} size={22} color={section === item ? '#1769e0' : '#788496'} /><Text style={[styles.navText, section === item && styles.active]}>{item}</Text></Pressable>)}</View>
+      <View style={styles.nav}>{sections.map((item) => <Pressable key={item} style={styles.navItem} onPress={() => item === 'kpis' ? router.push('/kpis') : setSection(item)}><Ionicons name={navIcon(item, section === item)} size={22} color={section === item ? '#1769e0' : '#788496'} /><Text style={[styles.navText, section === item && styles.active]}>{item === 'kpis' ? 'KPI Builder' : item}</Text></Pressable>)}</View>
     </SafeAreaView>
   );
 }
 
 function navIcon(section: AppSection, active: boolean) {
-  return ({ home: active ? 'home' : 'home-outline', numbers: active ? 'calculator' : 'calculator-outline', history: active ? 'time' : 'time-outline', team: active ? 'people' : 'people-outline' } as const)[section];
+  return ({ home: active ? 'home' : 'home-outline', numbers: active ? 'calculator' : 'calculator-outline', history: active ? 'time' : 'time-outline', team: active ? 'people' : 'people-outline', kpis: active ? 'options' : 'options-outline' } as const)[section];
 }
 
 function Home({ assignment }: { assignment: UserAssignment }) {
@@ -320,17 +321,29 @@ function PerformanceDashboard({ title, data, refreshControl }: { title: string; 
         <MetricCard label="Parts" value={`${metrics.partsPercent.toFixed(1)}%`} /><MetricCard label="ARO" value={formatCurrency(metrics.averageRepairOrder)} />
         <MetricCard label="Projected TY / LY" value={formatPercent(metrics.projectedYearOverYearPercent)} detail="Projected current vs completed LY" /><MetricCard label="Same-day TY / LY" value={formatPercent(metrics.sameDayYearOverYearPercent)} detail="MTD at equal selling-day count" />
       </View>
-      <Card title="Custom KPIs">{data.kpis.length ? data.kpis.map((kpi) => <Text key={kpi.id} style={styles.rowText}>{kpi.name}: {formatKpi(kpi)}</Text>) : <Text style={styles.muted}>No active KPIs assigned.</Text>}</Card>
+      <Card title="Custom KPIs">{data.kpis.length ? data.kpis.map((kpi) => <Text key={kpi.id} style={styles.rowText}>{kpi.name}: {formatKpi(kpi)}{kpi.monthly_goal !== null ? ` / ${formatKpiValue(kpi, kpi.monthly_goal)} · ${kpiStatus(kpi)}` : ''}</Text>) : <Text style={styles.muted}>No active KPIs assigned.</Text>}</Card>
       <Card title="Top 3 Priorities"><Text style={styles.rowText}>1. Review today’s sales pace</Text><Text style={styles.rowText}>2. Coach the largest opportunity</Text><Text style={styles.rowText}>3. Confirm tomorrow’s staffing plan</Text></Card>
     </ScrollView>
   );
 }
 
+function formatKpiValue(kpi: CustomKpi, value: number): string {
+  if (kpi.tracking_type === 'dollars') return formatCurrency(value);
+  if (kpi.tracking_type === 'percentage') return `${value.toFixed(1)}%`;
+  return String(value);
+}
+
 function formatKpi(kpi: CustomKpi): string {
   if (kpi.current_value === null) return 'Not entered';
-  if (kpi.tracking_type === 'dollars') return formatCurrency(kpi.current_value);
-  if (kpi.tracking_type === 'percentage') return `${kpi.current_value.toFixed(1)}%`;
-  return String(kpi.current_value);
+  return formatKpiValue(kpi, kpi.current_value);
+}
+
+function kpiStatus(kpi: CustomKpi): string {
+  if (kpi.current_value === null || kpi.monthly_goal === null) return 'No status';
+  const onTarget = kpi.goal_direction === 'higher'
+    ? kpi.current_value >= kpi.monthly_goal
+    : kpi.current_value <= kpi.monthly_goal;
+  return onTarget ? 'On target' : 'Needs attention';
 }
 
 function DistrictHome({ assignment }: { assignment: UserAssignment }) {
@@ -357,6 +370,8 @@ function DistrictHome({ assignment }: { assignment: UserAssignment }) {
 
 function Numbers({ assignment }: { assignment: UserAssignment }) {
   const [store, setStore] = useState<Store | null>(null);
+  const [kpis, setKpis] = useState<CustomKpi[]>([]);
+  const [kpiValues, setKpiValues] = useState<Record<string, string>>({});
   const [values, setValues] = useState({
     salesGoal: '',
     totalDays: '',
@@ -379,9 +394,12 @@ function Numbers({ assignment }: { assignment: UserAssignment }) {
       getStore(assignment.store_id),
       getMonthSettings(assignment.store_id, year, month),
       getLatestDaily(assignment.store_id, year, month),
+      getCustomKpis(assignment.store_id, year, month),
     ])
-      .then(([nextStore, settings, daily]) => {
+      .then(([nextStore, settings, daily, nextKpis]) => {
         setStore(nextStore);
+        setKpis(nextKpis);
+        setKpiValues(Object.fromEntries(nextKpis.map((kpi) => [kpi.id, kpi.current_value?.toString() ?? ''])));
         setValues({
           salesGoal: settings?.sales_goal?.toString() ?? '',
           totalDays: settings?.selling_days_total?.toString() ?? '',
@@ -396,11 +414,13 @@ function Numbers({ assignment }: { assignment: UserAssignment }) {
       })
       .catch((error) => Alert.alert('Numbers error', errorMessage(error)));
   }, [assignment.store_id]);
-  function number(value: string) { return Math.max(0, Number(value.replace(/[$,]/g, '')) || 0); }
+  function number(value: string) { return Math.max(0, Number(value.replace(/[$,% ,]/g, '')) || 0); }
   async function save() {
     if (!store) { Alert.alert('Store required', 'This assignment does not include a store.'); return; }
     const { year, month } = yearMonth();
     if (number(values.sellingDay) > number(values.totalDays)) { Alert.alert('Check selling days', 'Completed selling days cannot exceed total selling days.'); return; }
+    const missingRequired = kpis.find((kpi) => kpi.required && !(kpiValues[kpi.id] ?? '').trim());
+    if (missingRequired) { Alert.alert('Required KPI', `Enter ${missingRequired.name} before saving.`); return; }
     const mtdSales = number(values.mtdSales);
     const laborCost = laborMode === 'percentage'
       ? costFromPercentage(mtdSales, number(values.labor))
@@ -420,6 +440,9 @@ function Numbers({ assignment }: { assignment: UserAssignment }) {
           parts_cost: partsCost,
           car_count_mtd: number(values.cars),
         }),
+        saveCustomKpiValues(store.id, year, month, kpis
+          .filter((kpi) => (kpiValues[kpi.id] ?? '').trim())
+          .map((kpi) => ({ kpi_id: kpi.id, current_value: number(kpiValues[kpi.id]) }))),
       ];
       if (canEditGoals) {
         writes.push(saveMonthSettings({
@@ -433,7 +456,7 @@ function Numbers({ assignment }: { assignment: UserAssignment }) {
         }));
       }
       await Promise.all(writes);
-      Alert.alert('Saved', 'Supabase performance records were updated.');
+      Alert.alert('Saved', 'Daily performance and custom KPIs were updated.');
     } catch (caught) { Alert.alert('Save failed', errorMessage(caught)); } finally { setBusy(false); }
   }
   const mtdSales = number(values.mtdSales);
@@ -456,7 +479,8 @@ function Numbers({ assignment }: { assignment: UserAssignment }) {
       <MoneyPercentField label="Parts" value={values.parts} mode={partsMode} onModeChange={setPartsMode} onChangeText={(parts) => setValues({ ...values, parts })} preview={partsPreview} />
       <Field label="Car count MTD" value={values.cars} onChangeText={(cars) => setValues({ ...values, cars })} keyboardType="decimal-pad" />
       <Field label="Selling-day number" value={values.sellingDay} onChangeText={(sellingDay) => setValues({ ...values, sellingDay })} keyboardType="decimal-pad" />
-      <Button label="Save to Supabase" onPress={() => void save()} disabled={busy || !store} />
+      {kpis.length ? <Card title="Custom KPIs">{kpis.map((kpi) => <View key={kpi.id} style={styles.field}><Text style={styles.fieldLabel}>{kpi.name}{kpi.required ? ' *' : ''}</Text><TextInput style={styles.input} value={kpiValues[kpi.id] ?? ''} onChangeText={(value) => setKpiValues((current) => ({ ...current, [kpi.id]: value }))} keyboardType="decimal-pad" placeholder={kpi.tracking_type === 'percentage' ? '0.0%' : kpi.tracking_type === 'dollars' ? '$0.00' : '0'} placeholderTextColor="#98a2b3" /><Text style={styles.inputPreview}>Goal: {kpi.monthly_goal === null ? 'Not set' : formatKpiValue(kpi, kpi.monthly_goal)} · {kpi.goal_direction === 'higher' ? 'Higher' : 'Lower'} is better</Text></View>)}</Card> : null}
+      <Button label="Save daily check-in" onPress={() => void save()} disabled={busy || !store} />
     </ScrollView>
   );
 }

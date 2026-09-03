@@ -8,9 +8,10 @@ export const APP_ROLES = [
 ] as const;
 
 export type AppRole = (typeof APP_ROLES)[number];
-export type AppSection = 'home' | 'numbers' | 'history' | 'team';
+export type AppSection = 'home' | 'numbers' | 'history' | 'team' | 'kpis';
 export type PayType = 'straight_hourly' | 'flat_rate' | 'salary';
 export type KpiTrackingType = 'dollars' | 'percentage' | 'units';
+export type KpiGoalDirection = 'higher' | 'lower';
 
 export interface UserAssignment {
   id: string;
@@ -79,6 +80,7 @@ export interface CustomKpi {
   id: string;
   name: string;
   tracking_type: KpiTrackingType;
+  goal_direction: KpiGoalDirection;
   required: boolean;
   monthly_goal: number | null;
   current_value: number | null;
@@ -126,9 +128,11 @@ export function canViewTeamWages(role: AppRole): boolean {
 }
 
 export function sectionsForRole(role: AppRole): AppSection[] {
-  return canViewTeamWages(role)
+  const sections: AppSection[] = canViewTeamWages(role)
     ? ['home', 'numbers', 'history', 'team']
     : ['home', 'numbers', 'history'];
+  if (hasMinimumRole(role, 'district_manager')) sections.push('kpis');
+  return sections;
 }
 
 export const ROLE_LABELS: Record<AppRole, string> = {
