@@ -42,6 +42,10 @@ export default function RootLayout() {
             <Ionicons name="chatbubbles" size={18} color="#fff" />
             <Text style={styles.toolText}>Hub</Text>
           </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open first test setup" style={[styles.toolButton, styles.testButton]} onPress={() => router.push('/first-test-setup')}>
+            <Ionicons name="flask" size={18} color="#fff" />
+            <Text style={styles.toolText}>First Test Setup</Text>
+          </Pressable>
         </View>
       ) : null}
     </SafeAreaProvider>
@@ -71,5 +75,6 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   aiButton: { backgroundColor: '#172033' },
+  testButton: { backgroundColor: '#6b4f00' },
   toolText: { color: '#fff', fontWeight: '800' },
 });
