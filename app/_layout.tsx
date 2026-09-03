@@ -30,6 +30,10 @@ export default function RootLayout() {
             <Ionicons name="sparkles" size={18} color="#fff" />
             <Text style={styles.toolText}>AI Manager</Text>
           </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open District Command Center" style={styles.toolButton} onPress={() => router.push('/district-command-center')}>
+            <Ionicons name="stats-chart" size={18} color="#fff" />
+            <Text style={styles.toolText}>Command Center</Text>
+          </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Open Labor Planner" style={styles.toolButton} onPress={() => router.push('/labor-planner')}>
             <Ionicons name="people" size={18} color="#fff" />
             <Text style={styles.toolText}>Labor Planner</Text>
