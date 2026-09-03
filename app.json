@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "Shop Profit Autopilot",
+    "slug": "shop-profit-autopilot",
+    "version": "0.1.0",
+    "scheme": "shop-profit-autopilot",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": ["expo-router"]
+  }
+}
