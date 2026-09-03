@@ -306,7 +306,7 @@ function StoreHome({ assignment }: { assignment: UserAssignment }) {
   return <PerformanceDashboard title="Store Manager Home" data={data} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load()} />} />;
 }
 
-function PerformanceDashboard({ title, data, refreshControl }: { title: string; data: StoreData; refreshControl?: ReactElement }) {
+function PerformanceDashboard({ title, data, refreshControl }: { title: string; data: StoreData; refreshControl?: ComponentProps<typeof ScrollView>['refreshControl'] }) {
   const input = performanceInput(data);
   const metrics = calculatePerformance(input);
   return (
@@ -563,33 +563,12 @@ function MoneyPercentField({
       <View style={styles.fieldHeading}>
         <Text style={styles.fieldLabel}>{label}</Text>
         <View style={styles.modeToggle}>
-          <Pressable
-            accessibilityRole="button"
-            style={[styles.modeChoice, mode === 'cost' && styles.modeChoiceActive]}
-            onPress={() => onModeChange('cost')}
-          >
-            <Text style={mode === 'cost' ? styles.modeTextActive : styles.modeText}>Cost $</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            style={[styles.modeChoice, mode === 'percentage' && styles.modeChoiceActive]}
-            onPress={() => onModeChange('percentage')}
-          >
-            <Text style={mode === 'percentage' ? styles.modeTextActive : styles.modeText}>Percentage %</Text>
-          </Pressable>
+          <Pressable accessibilityRole="button" style={[styles.modeChoice, mode === 'cost' && styles.modeChoiceActive]} onPress={() => onModeChange('cost')}><Text style={mode === 'cost' ? styles.modeTextActive : styles.modeText}>Cost $</Text></Pressable>
+          <Pressable accessibilityRole="button" style={[styles.modeChoice, mode === 'percentage' && styles.modeChoiceActive]} onPress={() => onModeChange('percentage')}><Text style={mode === 'percentage' ? styles.modeTextActive : styles.modeText}>Percentage %</Text></Pressable>
         </View>
       </View>
-      <TextInput
-        style={styles.input}
-        value={value}
-        onChangeText={onChangeText}
-        keyboardType="decimal-pad"
-        placeholder={mode === 'cost' ? '0.00' : '0.0'}
-        placeholderTextColor="#98a2b3"
-      />
-      <Text style={styles.inputPreview}>
-        {mode === 'cost' ? 'Calculated percentage' : 'Calculated cost'}: {preview}
-      </Text>
+      <TextInput style={styles.input} value={value} onChangeText={onChangeText} keyboardType="decimal-pad" placeholder={mode === 'cost' ? '0.00' : '0.0'} placeholderTextColor="#98a2b3" />
+      <Text style={styles.inputPreview}>{mode === 'cost' ? 'Calculated percentage' : 'Calculated cost'}: {preview}</Text>
     </View>
   );
 }
