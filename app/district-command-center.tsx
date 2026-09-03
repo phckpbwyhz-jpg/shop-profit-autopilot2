@@ -104,13 +104,20 @@ export default function DistrictCommandCenterScreen() {
 
         <View style={styles.grid}>
           <MetricCard label="District MTD sales" value={formatCurrency(command.totalMtdSales)} />
-          <MetricCard label="District sales goal" value={formatCurrency(command.totalSalesGoal)} />
+          <MetricCard label="District sales goal" value={command.hasDistrictSalesGoal ? formatCurrency(command.totalSalesGoal) : 'Not set'} />
           <MetricCard label="Projected month-end" value={formatCurrency(command.projectedMonthEnd)} />
-          <MetricCard label="Projected goal" value={`${command.projectedGoalPercent.toFixed(1)}%`} />
+          <MetricCard label="Projected goal" value={command.hasDistrictSalesGoal ? `${command.projectedGoalPercent.toFixed(1)}%` : 'Not set'} />
           <MetricCard label="Weighted labor" value={`${command.laborPercent.toFixed(1)}%`} />
           <MetricCard label="Weighted parts" value={`${command.partsPercent.toFixed(1)}%`} />
-          <MetricCard label="Stores on pace" value={`${command.storesOnPace} / ${command.storeCount}`} />
+          <MetricCard label="Stores on goal pace" value={command.storesWithSalesGoals ? `${command.storesOnPace} / ${command.storesWithSalesGoals}` : 'Goals not set'} />
         </View>
+
+        {!command.hasDistrictSalesGoal && command.storeCount ? (
+          <View style={styles.notice}>
+            <Ionicons name="information-circle-outline" size={20} color="#1769e0" />
+            <Text style={styles.noticeText}>Official sales goals are not configured yet. Rankings and priorities fall back to verified projected TY/LY performance where available instead of treating missing goals as zero.</Text>
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Top 3 District Priorities</Text>
@@ -121,18 +128,18 @@ export default function DistrictCommandCenterScreen() {
               <Text style={styles.body}>Action: {priority.action}</Text>
             </View>
           ))}
-          {!command.priorities.length ? <Text style={styles.muted}>Add current store goals and daily check-ins to generate verified priorities.</Text> : null}
+          {!command.priorities.length ? <Text style={styles.muted}>Add current store goals, prior-year performance, or daily check-ins to generate verified priorities.</Text> : null}
         </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Store Ranking</Text>
-          <Text style={styles.muted}>Ranked against each store's own goals, with labor and parts discipline included. Raw sales volume alone does not determine rank.</Text>
+          <Text style={styles.muted}>Uses each store's own goal when configured. If a goal is missing, verified projected TY/LY becomes the sales-performance signal. Raw sales volume alone does not determine rank.</Text>
           {command.rankings.map((store, index) => (
             <View key={store.storeId} style={styles.storeRow}>
               <View style={styles.rank}><Text style={styles.rankText}>{index + 1}</Text></View>
               <View style={styles.storeInfo}>
                 <Text style={styles.priorityTitle}>{store.storeName}</Text>
-                <Text style={styles.muted}>{store.projectedGoalPercent.toFixed(1)}% of goal · Labor {store.laborPercent.toFixed(1)}% · Parts {store.partsPercent.toFixed(1)}%</Text>
+                <Text style={styles.muted}>{store.hasSalesGoal ? `${store.projectedGoalPercent.toFixed(1)}% of goal` : `Projected TY/LY ${formatPercent(store.projectedYearOverYearPercent)}`} · Labor {store.laborPercent.toFixed(1)}% · Parts {store.partsPercent.toFixed(1)}%</Text>
                 <Text style={styles.muted}>Same-day TY/LY {formatPercent(store.sameDayYearOverYearPercent)}</Text>
               </View>
               <View style={styles.right}><Text style={styles.projection}>{formatCurrency(store.projectedMonthEnd)}</Text><Text style={styles.muted}>projected</Text></View>
@@ -158,6 +165,8 @@ const styles = StyleSheet.create({
   error: { color: '#a43e3e', fontSize: 14 },
   link: { color: '#1769e0', fontWeight: '800', padding: 8 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12 },
+  notice: { flexDirection: 'row', gap: 9, alignItems: 'flex-start', padding: 14, borderRadius: 14, backgroundColor: '#eaf2ff' },
+  noticeText: { flex: 1, color: '#34445c', fontSize: 13, lineHeight: 19 },
   card: { padding: 18, borderRadius: 16, backgroundColor: '#fff', gap: 12 },
   priority: { gap: 5, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#edf1f6' },
   storeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#edf1f6' },
