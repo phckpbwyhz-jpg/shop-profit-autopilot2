@@ -42,6 +42,7 @@ import {
   saveHistoricalMonth,
   saveMonthSettings,
 } from '@/src/lib/appData';
+import { buildManagerInsights } from '@/src/lib/managerInsights';
 import {
   calculatePerformance,
   costFromPercentage,
@@ -310,6 +311,13 @@ function StoreHome({ assignment }: { assignment: UserAssignment }) {
 function PerformanceDashboard({ title, data, refreshControl }: { title: string; data: StoreData; refreshControl?: ComponentProps<typeof ScrollView>['refreshControl'] }) {
   const input = performanceInput(data);
   const metrics = calculatePerformance(input);
+  const insights = buildManagerInsights({
+    metrics,
+    salesGoal: input.monthlySalesGoal,
+    laborGoalPct: data.settings?.labor_goal_pct === null || data.settings?.labor_goal_pct === undefined ? null : Number(data.settings.labor_goal_pct),
+    partsGoalPct: data.settings?.parts_goal_pct === null || data.settings?.parts_goal_pct === undefined ? null : Number(data.settings.parts_goal_pct),
+    kpis: data.kpis,
+  });
   return (
     <ScrollView contentContainerStyle={styles.scroll} refreshControl={refreshControl}>
       <Text style={styles.eyebrow}>{title.toUpperCase()}</Text><Text style={styles.title}>{data.store.name}</Text>
@@ -322,7 +330,15 @@ function PerformanceDashboard({ title, data, refreshControl }: { title: string; 
         <MetricCard label="Projected TY / LY" value={formatPercent(metrics.projectedYearOverYearPercent)} detail="Projected current vs completed LY" /><MetricCard label="Same-day TY / LY" value={formatPercent(metrics.sameDayYearOverYearPercent)} detail="MTD at equal selling-day count" />
       </View>
       <Card title="Custom KPIs">{data.kpis.length ? data.kpis.map((kpi) => <Text key={kpi.id} style={styles.rowText}>{kpi.name}: {formatKpi(kpi)}{kpi.monthly_goal !== null ? ` / ${formatKpiValue(kpi, kpi.monthly_goal)} · ${kpiStatus(kpi)}` : ''}</Text>) : <Text style={styles.muted}>No active KPIs assigned.</Text>}</Card>
-      <Card title="Top 3 Priorities"><Text style={styles.rowText}>1. Review today’s sales pace</Text><Text style={styles.rowText}>2. Coach the largest opportunity</Text><Text style={styles.rowText}>3. Confirm tomorrow’s staffing plan</Text></Card>
+      <Card title="Top 3 Priorities">
+        {insights.map((insight, index) => (
+          <View key={insight.id} style={styles.field}>
+            <Text style={styles.sectionTitle}>{index + 1}. {insight.title}</Text>
+            <Text style={styles.muted}>{insight.detail}</Text>
+            <Text style={styles.rowText}>Action: {insight.action}</Text>
+          </View>
+        ))}
+      </Card>
     </ScrollView>
   );
 }
