@@ -80,6 +80,7 @@ function insightsFor(snapshot: StoreSnapshot): {
   insights: ManagerInsight[];
   projection: number;
   goalPercent: number;
+  goalConfigured: boolean;
 } {
   const input = {
     monthlySalesGoal: Number(snapshot.settings?.sales_goal ?? 0),
@@ -100,6 +101,7 @@ function insightsFor(snapshot: StoreSnapshot): {
   return {
     projection: metrics.projectedMonthEnd,
     goalPercent: metrics.projectedGoalPercent,
+    goalConfigured: input.monthlySalesGoal > 0,
     insights: buildManagerInsights({
       metrics,
       salesGoal: input.monthlySalesGoal,
@@ -185,10 +187,7 @@ export default function AiManagerScreen() {
       if (!data?.answer) throw new Error(data?.error ?? 'AI Coach returned no answer.');
       setCoachAnswer(String(data.answer));
     } catch (error) {
-      Alert.alert(
-        'AI Coach unavailable',
-        `${message(error)}\n\nThe server-side OpenAI credential may still need to be configured.`,
-      );
+      Alert.alert('AI Coach unavailable', message(error));
     } finally {
       setAsking(false);
     }
@@ -197,21 +196,23 @@ export default function AiManagerScreen() {
   if (loading)
     return (
       <SafeAreaView style={styles.center}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color="#1769e0" />
       </SafeAreaView>
     );
 
   return (
     <SafeAreaView style={styles.page}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} accessibilityLabel="Back">
-          <Ionicons name="chevron-back" size={28} />
+        <Pressable onPress={() => router.back()} accessibilityLabel="Back" style={styles.backButton}>
+          <Ionicons name="chevron-back" size={24} color="#172033" />
         </Pressable>
         <View style={styles.flex}>
           <Text style={styles.eyebrow}>AI MANAGER</Text>
           <Text style={styles.headerTitle}>Verified priorities</Text>
         </View>
-        <Ionicons name="sparkles" size={24} color="#1769e0" />
+        <View style={styles.sparkleBubble}>
+          <Ionicons name="sparkles" size={21} color="#1769e0" />
+        </View>
       </View>
 
       <ScrollView
@@ -225,11 +226,15 @@ export default function AiManagerScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.hero}>
-          <Text style={styles.heroTitle}>What should I focus on?</Text>
-          <Text style={styles.muted}>
-            Priorities come from verified shop data and deterministic calculations.
-            AI explains the data; it does not become the source of truth.
-          </Text>
+          <View style={styles.heroIcon}>
+            <Ionicons name="navigate" size={20} color="#fff" />
+          </View>
+          <View style={styles.flex}>
+            <Text style={styles.heroTitle}>What should I focus on?</Text>
+            <Text style={styles.heroText}>
+              Verified shop data first. AI helps explain the numbers and turn them into action.
+            </Text>
+          </View>
         </View>
 
         {snapshots.length > 1 ? (
@@ -254,9 +259,7 @@ export default function AiManagerScreen() {
                       selectedStoreId === snapshot.store.id && styles.chipTextOn,
                     ]}
                   >
-                    {snapshot.store.store_code
-                      ? `${snapshot.store.store_code} · `
-                      : ''}
+                    {snapshot.store.store_code ? `${snapshot.store.store_code} · ` : ''}
                     {snapshot.store.name}
                   </Text>
                 </Pressable>
@@ -268,33 +271,41 @@ export default function AiManagerScreen() {
         {selected && result ? (
           <>
             <View style={styles.summaryRow}>
-              <View style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Projected month-end</Text>
-                <Text style={styles.summaryValue}>
-                  {formatCurrency(result.projection)}
-                </Text>
+              <View style={[styles.summaryCard, styles.summaryCardPrimary]}>
+                <Text style={styles.summaryLabelPrimary}>Projected month-end</Text>
+                <Text style={styles.summaryValuePrimary}>{formatCurrency(result.projection)}</Text>
               </View>
               <View style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>Projected goal</Text>
-                <Text style={styles.summaryValue}>
-                  {result.goalPercent.toFixed(1)}%
+                <Text style={result.goalConfigured ? styles.summaryValue : styles.summaryValueSmall}>
+                  {result.goalConfigured ? `${result.goalPercent.toFixed(1)}%` : 'Not configured'}
                 </Text>
               </View>
             </View>
-            <Text style={styles.sectionTitle}>Top 3 priorities</Text>
+
+            {!result.goalConfigured ? (
+              <View style={styles.noticeCard}>
+                <Ionicons name="information-circle" size={19} color="#8a5a00" />
+                <Text style={styles.noticeText}>Sales goal is not configured. Goal-based warnings stay off until a verified goal is entered.</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Top priorities</Text>
+              <View style={styles.verifiedPill}>
+                <Ionicons name="checkmark-circle" size={14} color="#18794e" />
+                <Text style={styles.verifiedText}>Verified</Text>
+              </View>
+            </View>
+
             {result.insights.map((insight, index) => (
-              <InsightCard
-                key={insight.id}
-                insight={insight}
-                rank={index + 1}
-              />
+              <InsightCard key={insight.id} insight={insight} rank={index + 1} />
             ))}
             {!result.insights.length ? (
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>No priority gaps detected</Text>
                 <Text style={styles.muted}>
-                  Enter current sales, labor, parts and KPI data to generate
-                  management priorities.
+                  Enter current labor, parts, KPI and verified goal data to generate management priorities.
                 </Text>
               </View>
             ) : null}
@@ -303,18 +314,19 @@ export default function AiManagerScreen() {
 
         <View style={styles.coachCard}>
           <View style={styles.coachHeader}>
-            <Ionicons name="chatbubbles-outline" size={24} color="#1769e0" />
-            <Text style={styles.cardTitle}>Ask AI Coach</Text>
+            <View style={styles.coachIcon}>
+              <Ionicons name="chatbubbles" size={20} color="#fff" />
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.cardTitle}>Ask AI Coach</Text>
+              <Text style={styles.coachSubtitle}>What-if math, coaching ideas, and shop priorities</Text>
+            </View>
           </View>
-          <Text style={styles.muted}>
-            Ask about sales pace, labor, parts, ARO, or what to coach today. The
-            server re-validates your store access and builds its own verified data
-            snapshot before contacting the model.
-          </Text>
           <TextInput
             value={question}
             onChangeText={setQuestion}
-            placeholder="Example: What are the three things I should do before lunch?"
+            placeholder="Example: If I do $10,000 tomorrow with no added labor cost, what happens to labor %?"
+            placeholderTextColor="#98a2b3"
             multiline
             maxLength={2000}
             style={styles.questionInput}
@@ -324,34 +336,31 @@ export default function AiManagerScreen() {
             disabled={asking}
             style={[styles.askButton, asking && styles.disabled]}
           >
-            {asking ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Ionicons name="sparkles" size={18} color="#fff" />
-            )}
-            <Text style={styles.askButtonText}>
-              {asking ? 'Thinking…' : 'Ask AI Coach'}
-            </Text>
+            {asking ? <ActivityIndicator color="#fff" /> : <Ionicons name="sparkles" size={18} color="#fff" />}
+            <Text style={styles.askButtonText}>{asking ? 'Analyzing…' : 'Ask AI Coach'}</Text>
           </Pressable>
           {coachAnswer ? (
             <View style={styles.answerBox}>
-              <Text style={styles.answerLabel}>AI COACH</Text>
+              <View style={styles.answerHeader}>
+                <Ionicons name="sparkles" size={15} color="#1769e0" />
+                <Text style={styles.answerLabel}>AI COACH</Text>
+              </View>
               <Text style={styles.answerText}>{coachAnswer}</Text>
             </View>
           ) : null}
-          <Text style={styles.guardrail}>
-            Guardrail: AI does not know future workload, open ROs, or customer
-            intent unless that information is explicitly supplied later.
-          </Text>
+          <View style={styles.guardrailRow}>
+            <Ionicons name="shield-checkmark-outline" size={15} color="#98a2b3" />
+            <Text style={styles.guardrail}>
+              AI does not assume future workload, open ROs, customer intent, or technician availability.
+            </Text>
+          </View>
         </View>
 
         {assignment?.district_id ? (
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => router.push('/hub')}
-          >
+          <Pressable style={styles.secondaryButton} onPress={() => router.push('/hub')}>
             <Ionicons name="people-outline" size={20} color="#1769e0" />
             <Text style={styles.secondaryText}>Open District Hub</Text>
+            <Ionicons name="chevron-forward" size={18} color="#1769e0" />
           </Pressable>
         ) : null}
       </ScrollView>
@@ -362,9 +371,7 @@ export default function AiManagerScreen() {
 function InsightCard({ insight, rank }: { insight: ManagerInsight; rank: number }) {
   return (
     <View style={[styles.card, styles.insightCard]}>
-      <View style={styles.rank}>
-        <Text style={styles.rankText}>{rank}</Text>
-      </View>
+      <View style={styles.rank}><Text style={styles.rankText}>{rank}</Text></View>
       <View style={styles.flex}>
         <View style={styles.insightTop}>
           <Text style={styles.cardTitle}>{insight.title}</Text>
@@ -386,63 +393,78 @@ function SeverityBadge({ severity }: { severity: InsightSeverity }) {
     positive: 'On pace',
   };
   return (
-    <View
-      style={[
-        styles.badge,
-        severity === 'critical' && styles.badgeCritical,
-        severity === 'positive' && styles.badgePositive,
-      ]}
-    >
+    <View style={[
+      styles.badge,
+      severity === 'critical' && styles.badgeCritical,
+      severity === 'positive' && styles.badgePositive,
+    ]}>
       <Text style={styles.badgeText}>{label[severity]}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#f5f7fb' },
+  page: { flex: 1, backgroundColor: '#f3f6fb' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e6eaf0' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e9edf4' },
+  backButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
+  sparkleBubble: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#edf4ff' },
   flex: { flex: 1 },
-  eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, color: '#1769e0' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#172033' },
-  scroll: { padding: 18, paddingBottom: 60, gap: 14 },
-  hero: { backgroundColor: '#eaf2ff', padding: 18, borderRadius: 18, gap: 8 },
-  heroTitle: { fontSize: 24, fontWeight: '900', color: '#172033' },
+  eyebrow: { fontSize: 11, fontWeight: '900', letterSpacing: 1.4, color: '#1769e0' },
+  headerTitle: { fontSize: 22, fontWeight: '900', color: '#172033' },
+  scroll: { padding: 18, paddingBottom: 70, gap: 14 },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: '#172033', padding: 18, borderRadius: 20, shadowColor: '#172033', shadowOpacity: 0.14, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
+  heroIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#2f7df1' },
+  heroTitle: { fontSize: 22, fontWeight: '900', color: '#fff' },
+  heroText: { color: '#cfd8e8', lineHeight: 19, marginTop: 3 },
   muted: { color: '#667085', lineHeight: 20 },
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#e6eaf0', gap: 9 },
+  card: { backgroundColor: '#fff', borderRadius: 18, padding: 16, borderWidth: 1, borderColor: '#e6eaf0', gap: 9, shadowColor: '#172033', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 1 },
   label: { fontSize: 12, fontWeight: '800', color: '#475467', textTransform: 'uppercase' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { borderWidth: 1, borderColor: '#d0d5dd', borderRadius: 10, paddingHorizontal: 11, paddingVertical: 8 },
+  chip: { borderWidth: 1, borderColor: '#d0d5dd', borderRadius: 12, paddingHorizontal: 11, paddingVertical: 8 },
   chipOn: { backgroundColor: '#eaf2ff', borderColor: '#1769e0' },
   chipText: { fontWeight: '700', color: '#475467' },
   chipTextOn: { color: '#1769e0' },
   summaryRow: { flexDirection: 'row', gap: 10 },
-  summaryCard: { flex: 1, backgroundColor: '#fff', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#e6eaf0' },
-  summaryLabel: { fontSize: 12, color: '#667085', fontWeight: '700' },
-  summaryValue: { fontSize: 22, fontWeight: '900', color: '#172033', marginTop: 5 },
-  sectionTitle: { fontSize: 19, fontWeight: '900', color: '#172033', marginTop: 2 },
+  summaryCard: { flex: 1, minHeight: 108, backgroundColor: '#fff', padding: 15, borderRadius: 18, borderWidth: 1, borderColor: '#e6eaf0', justifyContent: 'center' },
+  summaryCardPrimary: { backgroundColor: '#1769e0', borderColor: '#1769e0' },
+  summaryLabel: { fontSize: 12, color: '#667085', fontWeight: '800' },
+  summaryLabelPrimary: { fontSize: 12, color: '#dbe9ff', fontWeight: '800' },
+  summaryValue: { fontSize: 23, fontWeight: '900', color: '#172033', marginTop: 6 },
+  summaryValueSmall: { fontSize: 16, fontWeight: '900', color: '#172033', marginTop: 6 },
+  summaryValuePrimary: { fontSize: 23, fontWeight: '900', color: '#fff', marginTop: 6 },
+  noticeCard: { flexDirection: 'row', gap: 9, alignItems: 'flex-start', backgroundColor: '#fff8e8', padding: 13, borderRadius: 14, borderWidth: 1, borderColor: '#f3dfae' },
+  noticeText: { flex: 1, color: '#6f4e00', lineHeight: 18, fontSize: 13, fontWeight: '600' },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  sectionTitle: { fontSize: 20, fontWeight: '900', color: '#172033' },
+  verifiedPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#eaf8ef', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999 },
+  verifiedText: { color: '#18794e', fontSize: 11, fontWeight: '900' },
   insightCard: { flexDirection: 'row', gap: 12 },
-  rank: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#172033', alignItems: 'center', justifyContent: 'center' },
+  rank: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#172033', alignItems: 'center', justifyContent: 'center' },
   rankText: { color: '#fff', fontWeight: '900' },
   insightTop: { gap: 7 },
-  cardTitle: { fontSize: 17, fontWeight: '800', color: '#172033' },
+  cardTitle: { fontSize: 17, fontWeight: '900', color: '#172033' },
   detail: { color: '#475467', lineHeight: 20 },
-  actionLabel: { fontSize: 11, fontWeight: '900', color: '#1769e0', textTransform: 'uppercase', marginTop: 2 },
+  actionLabel: { fontSize: 11, fontWeight: '900', color: '#1769e0', textTransform: 'uppercase', marginTop: 2, letterSpacing: 0.4 },
   action: { color: '#172033', lineHeight: 21, fontWeight: '600' },
-  badge: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#fff4e5' },
+  badge: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: '#fff4e5' },
   badgeCritical: { backgroundColor: '#feeceb' },
   badgePositive: { backgroundColor: '#eaf8ef' },
   badgeText: { fontSize: 11, fontWeight: '800', color: '#475467' },
-  coachCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#cfe0ff', gap: 10 },
-  coachHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  questionInput: { minHeight: 92, borderWidth: 1, borderColor: '#d0d5dd', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: '#172033', textAlignVertical: 'top' },
-  askButton: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1769e0', borderRadius: 12, paddingVertical: 13 },
-  askButtonText: { color: '#fff', fontWeight: '900' },
+  coachCard: { backgroundColor: '#fff', borderRadius: 20, padding: 17, borderWidth: 1, borderColor: '#cfe0ff', gap: 12, shadowColor: '#1769e0', shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
+  coachHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  coachIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1769e0' },
+  coachSubtitle: { color: '#667085', fontSize: 12, marginTop: 2 },
+  questionInput: { minHeight: 104, borderWidth: 1, borderColor: '#d0d5dd', borderRadius: 15, paddingHorizontal: 13, paddingVertical: 12, fontSize: 15, color: '#172033', backgroundColor: '#fbfcfe', textAlignVertical: 'top' },
+  askButton: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1769e0', borderRadius: 14, paddingVertical: 14 },
+  askButtonText: { color: '#fff', fontWeight: '900', fontSize: 15 },
   disabled: { opacity: 0.55 },
-  answerBox: { backgroundColor: '#f8faff', borderRadius: 12, padding: 14, gap: 7, borderWidth: 1, borderColor: '#e1e9fb' },
-  answerLabel: { fontSize: 11, fontWeight: '900', color: '#1769e0', letterSpacing: 0.8 },
+  answerBox: { backgroundColor: '#f6f9ff', borderRadius: 15, padding: 15, gap: 9, borderWidth: 1, borderColor: '#dce8ff' },
+  answerHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  answerLabel: { fontSize: 11, fontWeight: '900', color: '#1769e0', letterSpacing: 0.9 },
   answerText: { color: '#172033', lineHeight: 22, fontSize: 15 },
-  guardrail: { color: '#98a2b3', fontSize: 12, lineHeight: 17 },
-  secondaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 13, borderRadius: 12, borderWidth: 1, borderColor: '#b8cdf5', backgroundColor: '#fff' },
+  guardrailRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+  guardrail: { flex: 1, color: '#98a2b3', fontSize: 12, lineHeight: 17 },
+  secondaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#b8cdf5', backgroundColor: '#fff' },
   secondaryText: { fontWeight: '800', color: '#1769e0' },
 });
