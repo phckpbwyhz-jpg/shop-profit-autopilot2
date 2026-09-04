@@ -6,24 +6,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { ...corsHeaders, "Content-Type": "application/json" },
+});
 
 const safe = (value: unknown) => Math.max(0, Number(value) || 0);
 
 function outputText(payload: any): string {
-  if (typeof payload?.output_text === "string" && payload.output_text.trim()) {
-    return payload.output_text.trim();
-  }
+  if (typeof payload?.output_text === "string" && payload.output_text.trim()) return payload.output_text.trim();
   const parts: string[] = [];
   for (const item of payload?.output ?? []) {
     for (const content of item?.content ?? []) {
-      if (content?.type === "output_text" && typeof content.text === "string") {
-        parts.push(content.text);
-      }
+      if (content?.type === "output_text" && typeof content.text === "string") parts.push(content.text);
     }
   }
   return parts.join("\n").trim();
@@ -38,9 +33,7 @@ Deno.serve(async (req) => {
     if (!token) return json({ error: "Missing access token" }, 401);
 
     const apiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!apiKey) {
-      return json({ error: "AI coaching is not configured yet. Add the OPENAI_API_KEY Edge Function secret." }, 503);
-    }
+    if (!apiKey) return json({ error: "AI coaching is not configured yet. Add the OPENAI_API_KEY Edge Function secret." }, 503);
 
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -75,23 +68,18 @@ Deno.serve(async (req) => {
       .eq("active", true)
       .maybeSingle();
     if (storeError) throw storeError;
-    if (!store || store.organization_id !== assignment.organization_id) {
-      return json({ error: "Store not accessible" }, 403);
-    }
+    if (!store || store.organization_id !== assignment.organization_id) return json({ error: "Store not accessible" }, 403);
 
-    const allowed =
-      assignment.store_id === store.id ||
-      (!assignment.store_id && assignment.district_id === store.district_id) ||
-      (!assignment.store_id && !assignment.district_id && ["regional", "owner", "admin"].includes(assignment.role));
+    const allowed = assignment.store_id === store.id
+      || (!assignment.store_id && assignment.district_id === store.district_id)
+      || (!assignment.store_id && !assignment.district_id && ["regional", "owner", "admin"].includes(assignment.role));
     if (!allowed) return json({ error: "Store not accessible" }, 403);
 
     const now = new Date();
     const year = now.getUTCFullYear();
     const month = now.getUTCMonth() + 1;
     const start = `${year}-${String(month).padStart(2, "0")}-01`;
-    const next = month === 12
-      ? `${year + 1}-01-01`
-      : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    const next = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
 
     const [settingsResult, dailyResult, priorResult] = await Promise.all([
       admin.from("store_month_settings")
@@ -113,7 +101,6 @@ Deno.serve(async (req) => {
     const settings = settingsResult.data;
     const daily = dailyResult.data;
     const prior = priorResult.data;
-
     const total = safe(settings?.selling_days_total);
     const completed = Math.min(safe(daily?.selling_day_number), total);
     const sales = safe(daily?.mtd_sales);
@@ -124,16 +111,12 @@ Deno.serve(async (req) => {
     const projected = completed > 0 ? (sales / completed) * total : 0;
     const remainingDays = Math.max(0, total - completed);
     const remainingSales = goal > 0 ? Math.max(0, goal - sales) : null;
-    const needed = goal > 0 && remainingDays > 0 && remainingSales !== null
-      ? remainingSales / remainingDays
-      : null;
-    const laborPct = sales > 0 ? (labor * 0 + laborCost / sales) * 100 : 0;
+    const neededPerRemainingDay = goal > 0 && remainingDays > 0 && remainingSales !== null ? remainingSales / remainingDays : null;
+    const laborPct = sales > 0 ? (laborCost / sales) * 100 : 0;
     const partsPct = sales > 0 ? (partsCost / sales) * 100 : 0;
     const aro = carCount > 0 ? sales / carCount : 0;
     const projectedGoalPct = goal > 0 ? (projected / goal) * 100 : null;
-    const projectedYoY = prior && safe(prior.sales) > 0
-      ? ((projected - safe(prior.sales)) / safe(prior.sales)) * 100
-      : null;
+    const projectedYoY = prior && safe(prior.sales) > 0 ? ((projected - safe(prior.sales)) / safe(prior.sales)) * 100 : null;
 
     const snapshot = {
       store: { name: store.name, code: store.store_code },
@@ -145,7 +128,7 @@ Deno.serve(async (req) => {
         projected_month_end: projected,
         projected_goal_pct: projectedGoalPct,
         remaining_sales: remainingSales,
-        needed_per_remaining_day: needed,
+        needed_per_remaining_day: neededPerRemainingDay,
       },
       costs: {
         labor_cost_mtd: laborCost,
@@ -156,19 +139,16 @@ Deno.serve(async (req) => {
         parts_goal_pct: settings?.parts_goal_pct ?? null,
       },
       operations: { car_count_mtd: carCount, aro },
-      history: {
-        last_year_final_sales: prior?.sales ?? null,
-        projected_vs_last_year_pct: projectedYoY,
-      },
+      history: { last_year_final_sales: prior?.sales ?? null, projected_vs_last_year_pct: projectedYoY },
     };
 
     const instructions = `You are Shop Profit Autopilot's AI Manager, an automotive shop operations coach.
 Treat VERIFIED SHOP SNAPSHOT as the source of truth for current shop facts.
 Never invent a sales goal. When goal_configured is false, say the goal is not configured and do not discuss goal attainment.
-You may perform transparent arithmetic for a hypothetical explicitly supplied by the manager using verified snapshot values. For example, if the manager says a hypothetical sale adds zero labor cost, you may add that sale to MTD sales and recompute labor percentage while holding labor_cost_mtd constant. State the assumption clearly.
+You may perform transparent arithmetic for a hypothetical explicitly supplied by the manager using verified snapshot values. For example, if the manager says a hypothetical sale adds zero labor cost, add that sale to MTD sales and recompute labor percentage while holding labor_cost_mtd constant. State the assumption clearly.
 Do not claim knowledge of open repair orders, future appointments, workload, technician availability, customer intent, or company policy unless explicitly supplied.
 When discussing labor reductions, use conditional language such as 'if workload allows'.
-Give practical, concise management actions and separate observed facts from what-if results and suggested actions.
+Give practical, concise management actions. Separate observed facts from what-if results and suggested actions.
 Return clean plain text only. Do not use Markdown headings, asterisks, hash symbols, or tables.`;
 
     const openai = await fetch("https://api.openai.com/v1/responses", {
